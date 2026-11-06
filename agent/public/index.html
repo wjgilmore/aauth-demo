@@ -29,7 +29,7 @@
           </details>
           <button id="start">Post it for me</button>
           <p class="error" id="form-error" role="alert"></p>
-          <p class="muted" id="memory" hidden>The agent remembers your person token, so it won't need to send you to your PS to identify you. <button type="button" class="link" id="forget">Forget me</button></p>
+          <p class="muted" id="memory"><span id="memory-text"></span> <button type="button" class="link" id="start-over">Start over</button></p>
         </form>
       </section>
 
@@ -178,12 +178,19 @@
 
     async function refreshMemory() {
       const s = await fetch('/api/session').then((r) => r.json()).catch(() => ({}));
-      $('memory').hidden = !s.remembered;
+      $('memory-text').textContent = s.remembered
+        ? 'The agent remembers who you are, so it won\'t send you to your Person Server to confirm it.'
+        : 'Want the full flow again (sign in and approve)?';
     }
 
-    $('forget').addEventListener('click', async () => {
+    // Clear what the agent remembers, then open the PS's own "Start over" page:
+    // only the PS can sign you out and revoke what you allowed there.
+    $('start-over').addEventListener('click', async () => {
+      const psUrl = (document.querySelector('[name=psUrl]').value || config.psUrl || '').replace(/\/+$/, '');
+      const tab = psUrl ? window.open(`${psUrl}/reset`, demoTarget('ps')) : null; // open first, before any await
       await fetch('/api/session', { method: 'DELETE' });
       refreshMemory();
+      if (tab) tab.focus();
     });
 
     async function advance(id) {

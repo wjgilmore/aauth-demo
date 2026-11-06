@@ -63,7 +63,7 @@ What the demo PS does, to keep that from feeling repetitive:
 | Already signed in at the PS | Approved on arrival; you bounce straight back | Asked, unless you chose "Always allow" |
 | Same browser again | The agent reuses its saved person token (valid up to an hour), so no trip to the PS | Issued immediately (200) if "Always allow" is on |
 
-You can see and revoke "Always allow" grants at `/account` on the PS. The agent's **Forget me** link discards its saved person token.
+You can see and revoke "Always allow" grants at `/account` on the PS. To go through the whole flow again, click **Start over** on the agent. It discards the agent's saved person token and opens the PS's `/reset` page. One click there signs you out and revokes that session's grants. The agent can't do this for you: only you, at your PS, can.
 
 What each party checks:
 

@@ -101,7 +101,8 @@ section('New browser, already signed in at the PS');
 const browser2 = agentBrowser();
 task = await browser2.start('from a second browser');
 check(task.status === 'waiting' && task.pending?.purpose === 'person', 'new agent session needs a person token');
-check((await visit(ada, task.pending.code)).status === 200, 'PS approves the identity request on arrival (already signed in)');
+const arrival = await visit(ada, task.pending.code);
+check(arrival.status === 200 && (await arrival.text()).includes('confirmed it\'s you'), 'PS approves the identity request on arrival and says why');
 task = await browser2.advance(task.id);
 check(task.status === 'waiting' && task.pending?.purpose === 'auth', 'post still needs explicit approval');
 await decide(ada, task.pending.code, 'deny');
@@ -121,6 +122,13 @@ task = await browser3.start('rate limit check 4');
 check(task.status === 'failed' && /rate limiting/i.test(task.error), 'the fourth is refused (429)');
 const limited = task.log.find((e) => e.response?.status === 429);
 check(Boolean(limited?.response.headers['retry-after']) && !titles(task).includes('Approved by your standing permission'), 'refused with Retry-After, before the PS is asked');
+
+// ---------------------------------------------------------------------------
+section('Start over');
+check((await (await fetch(`${PS}/reset`, { headers: { cookie: grace } })).text()).includes('Start over'), 'PS shows a Start over page');
+const reset = await fetch(`${PS}/reset`, { method: 'POST', headers: { cookie: grace } });
+check(/Max-Age=0/.test(reset.headers.get('set-cookie') || '') && (await reset.text()).includes('1 remembered permission was revoked'), 'Start over signs out and revokes the session\'s permissions');
+check(!(await (await fetch(`${PS}/account`, { headers: { cookie: grace } })).text()).includes('name="key"'), 'no permissions remain');
 
 // ---------------------------------------------------------------------------
 section('Content rules');

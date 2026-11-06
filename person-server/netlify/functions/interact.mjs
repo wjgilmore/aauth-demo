@@ -4,6 +4,7 @@
 //   POST /interact/login                          demo sign-in (display name only)
 //   POST /interact/decision                       approve or deny
 //   GET  /account, POST /account/revoke           remembered permissions
+//   GET  /reset, POST /reset                     start over: sign out and forget permissions
 //   GET  /logout
 //
 // PS policy in this demo:
@@ -25,6 +26,7 @@ import {
   pairwiseSub,
   pendingByCode,
   readSession,
+  revokeAllGrants,
   revokeGrant,
   saveGrant,
   savePending,
@@ -143,11 +145,38 @@ function consent(p, session, callback) {
   </section>`;
 }
 
-function donePage(p, approved) {
+function donePage(p, approved, { autoSession } = {}) {
+  const why = autoSession
+    ? `<p>You're signed in as <strong>${esc(autoSession.name)}</strong>, so your Person Server confirmed it's you to <strong>${esc(p.resourceName)}</strong> without asking again.</p>
+      <p class="muted">Not you, or want to go through the whole flow again? <a href="/reset">Start over</a></p>`
+    : '';
   return html(
     200,
     `<section class="card"><h2>${approved ? 'Done' : 'Cancelled'}</h2>
+      ${why}
       <p>You can close this tab and return to <strong>${esc(p.agent.name)}</strong>. It will notice within a few seconds.</p></section>`,
+  );
+}
+
+function resetPage(session) {
+  if (!session) {
+    return html(
+      200,
+      `<section class="card"><h2>Start over</h2>
+        <p>You're signed out, and this Person Server isn't remembering anything for you. The next time an agent asks, you'll sign in and approve again.</p></section>`,
+    );
+  }
+  return html(
+    200,
+    `<section class="card"><h2>Start over</h2>
+      <p>You're signed in as <strong>${esc(session.name)}</strong>. Starting over will:</p>
+      <ul>
+        <li>sign you out of this Person Server, and</li>
+        <li>revoke every "Always allow" permission you gave in this session.</li>
+      </ul>
+      <p>The next time an agent asks, you'll enter your name and approve again.</p>
+      <form method="post" action="/reset" class="actions"><a class="button secondary" href="/account">See permissions first</a><button>Start over</button></form>
+    </section>`,
   );
 }
 
@@ -198,10 +227,10 @@ async function decide(p, session, approve, { remember = false } = {}) {
 }
 
 /** After a decision, send the person back to the agent (or show a done page). */
-function finish(p, approved, callbackParam, headers = {}) {
+function finish(p, approved, callbackParam, headers = {}, pageOpts = {}) {
   const callback = safeCallback(p, callbackParam);
   if (callback) return redirect(callback, headers);
-  const res = donePage(p, approved);
+  const res = donePage(p, approved, pageOpts);
   for (const [k, v] of Object.entries(headers)) res.headers.set(k, v);
   return res;
 }
@@ -215,6 +244,19 @@ export default async (req) => {
   const path = requestPath(req);
 
   if (path === '/logout') return redirect('/', { 'Set-Cookie': clearCookie() });
+
+  if (path === '/reset') {
+    const session = readSession(req);
+    if (req.method !== 'POST') return resetPage(session);
+    const revoked = session ? await revokeAllGrants(session.uid) : 0;
+    return html(
+      200,
+      `<section class="card"><h2>All clear</h2>
+        <p>You're signed out${revoked ? ` and ${revoked} remembered permission${revoked === 1 ? ' was' : 's were'} revoked` : ''}. The next time an agent asks, you'll enter your name and approve again.</p>
+        <p class="muted">You can close this tab.</p></section>`,
+      { 'Set-Cookie': clearCookie() },
+    );
+  }
 
   if (path === '/account') {
     const session = readSession(req);
@@ -234,7 +276,7 @@ export default async (req) => {
     // Already signed in: identifying you to a resource needs no further click.
     if (p.kind === 'person') {
       await decide(p, session, true);
-      return finish(p, true, callback);
+      return finish(p, true, callback, {}, { autoSession: session });
     }
     if (!p.viewed) await savePending({ ...p, viewed: true });
     return html(200, consent(p, session, safeCallback(p, callback)));
@@ -285,4 +327,4 @@ export default async (req) => {
   return new Response('Not found', { status: 404 });
 };
 
-export const config = { path: ['/interact', '/interact/login', '/interact/decision', '/account', '/account/revoke', '/logout'] };
+export const config = { path: ['/interact', '/interact/login', '/interact/decision', '/account', '/account/revoke', '/reset', '/logout'] };

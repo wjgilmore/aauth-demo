@@ -137,6 +137,13 @@ export async function listGrants(uid) {
   return grants.filter(Boolean).sort((a, b) => b.createdAt - a.createdAt);
 }
 
+/** Revoke every grant made in a session (used by "Start over"). Returns how many. */
+export async function revokeAllGrants(uid) {
+  const { blobs } = await store().list({ prefix: `usergrant/${uid}/` });
+  for (const b of blobs) await revokeGrant(uid, b.key.split('/').pop());
+  return blobs.length;
+}
+
 export async function revokeGrant(uid, key) {
   const grant = await store().get(`grant/${key}`, { type: 'json' });
   if (!grant || grant.uid !== uid) return false;
