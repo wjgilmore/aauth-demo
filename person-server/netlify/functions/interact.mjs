@@ -12,6 +12,7 @@
 //   * Auth-token requests (permission to act) always need an explicit "Allow",
 //     unless you previously ticked "Always allow" for that agent and resource.
 import { now, requestPath } from '../../../shared/aauth.mjs';
+import { cleanName } from '../../../shared/content.mjs';
 import {
   clearCookie,
   consumeCode,
@@ -255,8 +256,8 @@ export default async (req) => {
   if (!isLive(p)) return html(404, codeForm('That code is unknown, already used, or expired.'));
 
   if (path === '/interact/login') {
-    const name = String(form.get('name') || '').trim().slice(0, 40);
-    if (!name) return redirect(interactUrl(code, callbackParam));
+    if (!String(form.get('name') || '').trim()) return redirect(interactUrl(code, callbackParam));
+    const name = cleanName(form.get('name')); // plain text; links or explicit terms become "Anonymous"
     const { session, cookie } = newSession(name);
     // For an identity request, signing in *is* the consent (the page said so).
     if (p.kind === 'person') {

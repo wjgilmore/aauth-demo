@@ -21,10 +21,10 @@ import {
   signJwt,
   verifySignedRequest,
 } from '../../../shared/aauth.mjs';
+import { checkMessage, cleanName } from '../../../shared/content.mjs';
 
 const MAX_POSTS = 100;
 const MAX_AGE_SECONDS = 24 * 60 * 60;
-const MAX_LENGTH = 280;
 export const SCOPE = 'board.write profile';
 
 const store = () => getStore({ name: 'posts', consistency: 'strong' });
@@ -32,7 +32,10 @@ const store = () => getStore({ name: 'posts', consistency: 'strong' });
 async function listPosts() {
   const posts = (await store().get('all', { type: 'json' })) || [];
   const cutoff = Date.now() - MAX_AGE_SECONDS * 1000;
-  return posts.filter((p) => Date.parse(p.createdAt) > cutoff);
+  // Re-apply the content rules on read too, so a rule change also hides older posts.
+  return posts
+    .filter((p) => Date.parse(p.createdAt) > cutoff && checkMessage(p.message).ok)
+    .map((p) => ({ ...p, message: checkMessage(p.message).text, name: cleanName(p.name) }));
 }
 
 export default async (req) => {
@@ -43,6 +46,17 @@ export default async (req) => {
     const BOARD_URL = envUrl('BOARD_URL');
     const signed = await verifySignedRequest(req, { accept: ['aa-agent+jwt', 'aa-person+jwt', 'aa-auth+jwt'] });
     const { typ, payload } = signed;
+
+    // Plain text only: HTML stripped, links and explicit terms refused. Checked on
+    // every attempt, so a bad message is refused before anyone is asked to approve it.
+    let raw;
+    try {
+      raw = JSON.parse(signed.bodyText || '{}').message;
+    } catch {
+      throw new AAuthError(400, 'invalid_request', 'Body must be JSON');
+    }
+    const checked = checkMessage(raw);
+    if (!checked.ok) throw new AAuthError(400, 'invalid_message', checked.error);
 
     // 1. Agent token only: we need to know which person the agent acts for.
     if (typ === 'aa-agent+jwt') {
@@ -86,20 +100,10 @@ export default async (req) => {
     const scopes = String(payload.scope || '').split(' ');
     if (!scopes.includes('board.write')) throw new AAuthError(403, 'insufficient_scope', 'board.write is required');
 
-    let message;
-    try {
-      message = String(JSON.parse(signed.bodyText || '{}').message || '').trim();
-    } catch {
-      throw new AAuthError(400, 'invalid_request', 'Body must be JSON');
-    }
-    if (!message || message.length > MAX_LENGTH) {
-      throw new AAuthError(400, 'invalid_request', `message must be 1-${MAX_LENGTH} characters`);
-    }
-
     const post = {
       id: randomId(8),
-      message,
-      name: String(payload.name || 'Anonymous').slice(0, 40),
+      message: checked.text,
+      name: cleanName(payload.name),
       ps: new URL(payload.iss).host,
       sub: payload.sub,
       agentJkt: signed.jkt,

@@ -10,7 +10,15 @@ A small, readable, three-site demo of [AAuth](https://github.com/dickhardt/AAuth
 
 Each folder deploys as its own Netlify site, so the three roles run on three real origins.
 
-**Live demo:** start at the [agent](https://aauth-demo-agent.netlify.app), then watch the [message board](https://aauth-demo-board.netlify.app). Your [Person Server](https://aauth-demo-person-server.netlify.app) handles sign-in and approvals.
+## Live demo
+
+| Role | URL |
+|---|---|
+| Agent (third-party service; start here) | https://aauth-demo-agent.netlify.app |
+| Person Server (sign in and approve) | https://aauth-demo-person-server.netlify.app |
+| Message board (resource) | https://aauth-demo-board.netlify.app |
+
+Open the agent, type a message, and follow the prompts. Then check the board.
 
 Implements a subset of [`draft-hardt-oauth-aauth-protocol-11`](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/) (Sept 2026) and [`draft-hardt-httpbis-signature-key-09`](https://datatracker.ietf.org/doc/draft-hardt-httpbis-signature-key/). It uses the three-party "PS authorization" mode.
 
@@ -130,7 +138,22 @@ scripts/                   key generation, local dev runner, e2e check
 - **Identity approval happens on a GET** when you're already signed in. That's convenient for a demo; a production PS would want a click or a stronger link to the agent's request.
 - **The board accepts any PS.** This is intentional: AAuth resources trust the issuer of the token, not a fixed list.
 - **No replay cache.** It relies on the 60-second signature window, which the spec makes optional.
-- **The abuse limits are basic:** 280 characters, the newest 100 posts, and expiry after 24 hours. Add rate limiting before you promote a public deployment widely.
+- **Abuse limits are basic.** Posts are capped at 280 characters, the board keeps only the newest 100, and posts expire after 24 hours. There's no rate limiting.
+
+## Content rules
+
+The board accepts plain text only. It enforces this itself (`shared/content.mjs`), because anyone can write their own agent and Person Server and skip the checks in ours.
+
+- **HTML is stripped.** Tags, comments, and stray `<` and `>` characters are removed. A message that's nothing but markup is refused.
+- **Links are refused.** That covers URLs with a scheme (`https://`, `ftp://` and so on), `javascript:` and `data:` URIs, `www.` addresses, and bare domains with common TLDs (`example.com`).
+- **Explicit and hateful terms are refused,** including simple disguises like `p0rn` and `p.o.r.n`.
+- **Invisible characters are removed.** That includes zero-width characters and right-to-left overrides, which can hide or reorder text.
+- **Display names follow the same rules.** A name that breaks them is shown as "Anonymous".
+- **Posts are always rendered as text, never HTML.** The board and agent also send a Content-Security-Policy that blocks images, scripts and frames from other sites.
+
+The agent checks messages before it starts, so nobody approves a post that will be refused. The board checks again on every request, and re-applies the rules when it lists posts, so tightening a rule also hides older posts.
+
+A word list can't catch everything: misspellings, other languages, or text spelled out as "example dot com". The rules make abuse inconvenient, not impossible. For a widely promoted deployment, consider adding rate limiting or moderation.
 - **`netlify dev` quirk:** when a function returns 403 or 404, `netlify dev` re-invokes it with `.html` or `/index.html` appended. `cleanPath()` in `shared/aauth.mjs` undoes that, but only under `NETLIFY_DEV`.
 
 AAuth is a moving draft that is migrating to the OpenID Foundation, so field names may change between versions.

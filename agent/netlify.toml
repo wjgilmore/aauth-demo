@@ -21,3 +21,12 @@
   from = "/callback"
   to = "/index.html"
   status = 200
+
+# Plain-text pages: nothing may load from other sites (no third-party images,
+# scripts, frames or fonts), even if a message somehow contained markup.
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"

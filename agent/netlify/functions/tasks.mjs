@@ -6,6 +6,7 @@
 //   GET    /api/session               -> what the agent remembers about this browser
 //   DELETE /api/session               -> forget it (next post starts from scratch)
 import { assertServerId, envUrl, json, now, randomId, requestPath } from '../../../shared/aauth.mjs';
+import { checkMessage } from '../../../shared/content.mjs';
 import { advance, createTask, forgetSession, getSession, getTask } from '../lib/agent.mjs';
 
 const COOKIE = 'agent_sid';
@@ -44,8 +45,10 @@ export default async (req) => {
   if (!id) {
     if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
     const body = await req.json().catch(() => ({}));
-    const message = String(body.message || '').trim();
-    if (!message || message.length > 280) return json(400, { error: 'invalid_request', detail: 'message must be 1-280 characters' });
+    // Same rules the board enforces, checked up front so nobody approves a post that will be refused.
+    const checked = checkMessage(body.message);
+    if (!checked.ok) return json(400, { error: 'invalid_message', detail: checked.error });
+    const message = checked.text;
     const psUrl = String(body.psUrl || envUrl('PS_URL')).replace(/\/+$/, '');
     try {
       assertServerId(psUrl);

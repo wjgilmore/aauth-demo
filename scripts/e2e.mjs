@@ -76,8 +76,9 @@ check(posts.some((p) => p.message === message), 'post appears on the board');
 
 // ---------------------------------------------------------------------------
 section('Second post from the same browser: no prompts at all');
-task = await browser.start(`${message} (again)`);
+task = await browser.start(`<b>${message}</b> <img src="x"> (again)`);
 check(task.status === 'done', 'task completes in a single request');
+check(task.post?.message === `${message} (again)`, 'HTML is stripped before posting');
 check(titles(task).includes('Reuse your person token'), 'agent reuses the saved person token');
 check(titles(task).includes('Approved by your standing permission'), 'PS issues the auth token directly (200, not 202)');
 
@@ -106,6 +107,18 @@ check(task.status === 'waiting' && task.pending?.purpose === 'auth', 'post still
 await decide(ada, task.pending.code, 'deny');
 
 // ---------------------------------------------------------------------------
+section('Content rules');
+for (const [m, label] of [
+  ['look at https://example.com/pic.jpg', 'links are refused'],
+  ['free porn here', 'explicit terms are refused'],
+  ['<img src="https://example.com/x.png">', 'markup-only messages are refused'],
+]) {
+  const res = await fetch(`${AGENT}/api/tasks`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: m }) });
+  check(res.status === 400, `${label} (before anyone is asked to approve)`);
+}
+const csp = (await fetch(`${BOARD}/`)).headers.get('content-security-policy') || '';
+check(/img-src 'self'/.test(csp), 'board blocks third-party images with a CSP');
+
 section('Board protection');
 const unsigned = await fetch(`${BOARD}/api/posts`, { method: 'POST', body: '{"message":"x"}' });
 check(unsigned.status === 401 && unsigned.headers.get('aauth-requirement') === 'requirement=agent-token', 'unsigned writes are refused');
