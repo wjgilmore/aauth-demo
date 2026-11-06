@@ -4,6 +4,8 @@
 //
 //   node scripts/e2e.mjs [--ps URL] [--agent URL] [--board URL]
 
+import { decodeJwt, jwkThumbprint } from '../shared/aauth.mjs';
+
 const args = Object.fromEntries(
   process.argv.slice(2).reduce((acc, a, i, all) => (a.startsWith('--') ? [...acc, [a.slice(2), all[i + 1]]] : acc), []),
 );
@@ -55,10 +57,19 @@ check(task.status === 'waiting' && task.pending?.purpose === 'person', 'agent as
 check(!('sid' in task), 'agent never exposes its session id to the page');
 
 const { res: loginRes, cookie: ada } = await signIn('Ada', task.pending.code);
+const connected = await loginRes.text();
 check(loginRes.status === 200 && ada, 'signing in approves the identity request (no extra click)');
+check(connected.includes('knows it') && connected.includes('Waiting for its request'), 'PS says what happened and waits for the next request');
 
 task = await browser.advance(task.id);
 check(task.status === 'waiting' && task.pending?.purpose === 'auth', 'board issues a resource token; PS needs approval for the post');
+
+// The "knows it's you" page polls this and opens the permission request itself.
+const agentJkt = jwkThumbprint(decodeJwt(task.log[0].tokens[0]).payload.cnf.jwk);
+const next = await (await fetch(`${PS}/interact/next?resource=${encodeURIComponent(BOARD)}&agent=${encodeURIComponent(agentJkt)}&since=0`, { headers: { cookie: ada } })).json();
+check(next.code === task.pending.code, 'PS tab finds the permission request on its own');
+const strangerNext = await (await fetch(`${PS}/interact/next?resource=${encodeURIComponent(BOARD)}&agent=${encodeURIComponent(agentJkt)}&since=0`)).json();
+check(!strangerNext.code, 'nobody else can see that request');
 
 const consent = await (await visit(ada, task.pending.code)).text();
 check(consent.includes('board.write') && consent.includes(message) && consent.includes('Always allow'), 'consent page shows the scope, the message, and "Always allow"');
@@ -66,7 +77,9 @@ check(consent.includes('board.write') && consent.includes(message) && consent.in
 const { cookie: mallory } = await signIn('Mallory', task.pending.code);
 check((await decide(mallory, task.pending.code, 'approve')).status === 403, 'a different person cannot approve it');
 
-check((await decide(ada, task.pending.code, 'approve', { remember: '1' })).status === 200, 'person approves and ticks "Always allow"');
+const approvedPage = await decide(ada, task.pending.code, 'approve', { remember: '1' });
+const approvedText = await approvedPage.text();
+check(approvedPage.status === 200 && approvedText.includes('is posting your message') && approvedText.includes('See it on'), 'person approves with "Always allow"; PS says what happens next');
 check((await visit(ada, task.pending.code)).status === 404, 'interaction code is single-use');
 
 task = await browser.advance(task.id);
@@ -102,7 +115,7 @@ const browser2 = agentBrowser();
 task = await browser2.start('from a second browser');
 check(task.status === 'waiting' && task.pending?.purpose === 'person', 'new agent session needs a person token');
 const arrival = await visit(ada, task.pending.code);
-check(arrival.status === 200 && (await arrival.text()).includes('confirmed it\'s you'), 'PS approves the identity request on arrival and says why');
+check(arrival.status === 200 && (await arrival.text()).includes('nothing to confirm'), 'PS approves the identity request on arrival and says why');
 task = await browser2.advance(task.id);
 check(task.status === 'waiting' && task.pending?.purpose === 'auth', 'post still needs explicit approval');
 await decide(ada, task.pending.code, 'deny');

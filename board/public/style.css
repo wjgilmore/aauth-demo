@@ -151,3 +151,12 @@ ul.grants .card p { margin: 0 0 8px; }
 .demo-nav a { text-decoration: none; color: var(--muted); }
 .demo-nav a:hover { color: var(--text); text-decoration: underline; }
 .demo-nav .current { color: var(--accent); font-weight: 600; }
+
+/* PS result page: waiting for the agent's next request */
+.waiting { color: var(--muted); }
+.waiting::before {
+  content: ''; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 0.5em; vertical-align: -0.05em;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .waiting::before { animation: none; } }

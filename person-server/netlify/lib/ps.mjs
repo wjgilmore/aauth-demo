@@ -19,7 +19,25 @@ export async function createPending(fields) {
   const pending = { id, status: 'pending', createdAt: now(), expiresAt: now() + PENDING_TTL, ...fields };
   await store().setJSON(`req/${id}`, pending);
   await store().set(`code/${normalizeCode(pending.code)}`, id);
+  if (pending.kind === 'auth') await noteNextStep(pending.sub, pending.agent.jkt, { code: pending.code });
   return pending;
+}
+
+// ---------------------------------------------------------------------------
+// "What's next" for a person who just confirmed their identity: the agent's
+// follow-up permission request (or an automatic approval). Keyed by the person's
+// pairwise sub at the resource and the agent's key, so it only ever reveals
+// requests addressed to that person.
+// ---------------------------------------------------------------------------
+
+export const noteNextStep = (sub, jkt, step) => store().setJSON(`next/${sub}/${jkt}`, { ...step, at: now() });
+
+export async function nextStep(sub, jkt, since) {
+  const step = await store().get(`next/${sub}/${jkt}`, { type: 'json' });
+  if (!step || step.at < since) return null;
+  if (step.auto) return { auto: true };
+  const p = await pendingByCode(step.code);
+  return p && p.status === 'pending' && p.expiresAt > now() ? { code: p.code } : null;
 }
 
 /** What we remember about the agent that made a request (from its verified agent token). */

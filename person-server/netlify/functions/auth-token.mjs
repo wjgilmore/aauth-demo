@@ -1,7 +1,7 @@
 // auth_token_endpoint: an agent exchanges a resource token (plus the person token it
 // presented) for an auth token. The PS asks the person to approve the requested scope.
 import { AAuthError, errorResponse, interactionCode, json, verifyJwt, verifyLocalJwt, verifySignedRequest } from '../../../shared/aauth.mjs';
-import { agentSummary, createPending, findGrant, interactionResponse, mintAuthToken, psKey, psUrl, scopeCovered } from '../lib/ps.mjs';
+import { agentSummary, createPending, findGrant, interactionResponse, mintAuthToken, noteNextStep, psKey, psUrl, scopeCovered } from '../lib/ps.mjs';
 
 export default async (req) => {
   if (req.method !== 'POST') return json(405, { error: 'method_not_allowed' });
@@ -59,6 +59,7 @@ export default async (req) => {
     const grant = await findGrant(request.resource, request.sub, request.agent);
     if (grant && scopeCovered(grant.scope, request.scope)) {
       const minted = mintAuthToken(request, { name: grant.name });
+      await noteNextStep(request.sub, request.agent.jkt, { auto: true });
       return json(200, { auth_token: minted.token, expires_in: minted.expiresIn }, { 'Cache-Control': 'no-store' });
     }
 

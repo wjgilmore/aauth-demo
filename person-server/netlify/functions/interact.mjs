@@ -12,7 +12,7 @@
 //     If you're already signed in, they're approved without another click.
 //   * Auth-token requests (permission to act) always need an explicit "Allow",
 //     unless you previously ticked "Always allow" for that agent and resource.
-import { now, requestPath } from '../../../shared/aauth.mjs';
+import { json, now, requestPath } from '../../../shared/aauth.mjs';
 import { cleanName } from '../../../shared/content.mjs';
 import {
   clearCookie,
@@ -23,6 +23,7 @@ import {
   mintAuthToken,
   mintPersonToken,
   newSession,
+  nextStep,
   pairwiseSub,
   pendingByCode,
   readSession,
@@ -145,16 +146,78 @@ function consent(p, session, callback) {
   </section>`;
 }
 
-function donePage(p, approved, { autoSession } = {}) {
-  const why = autoSession
-    ? `<p>You're signed in as <strong>${esc(autoSession.name)}</strong>, so your Person Server confirmed it's you to <strong>${esc(p.resourceName)}</strong> without asking again.</p>
-      <p class="muted">Not you, or want to go through the whole flow again? <a href="/reset">Start over</a></p>`
-    : '';
+/**
+ * What the person sees after a decision. It says plainly what just happened and
+ * what comes next, and offers buttons back to the agent's tab (the callback
+ * URL, which reopens the agent's task) and to the resource.
+ */
+function donePage(p, approved, { session, auto = false, remember = false, callback = null } = {}) {
+  const agent = esc(p.agent.name);
+  const site = esc(p.resourceName);
+  const back = callback ? `<a class="button secondary" href="${esc(callback)}" target="aauth-agent">Back to ${agent}</a>` : '';
+  const seeIt = `<a class="button" href="${esc(p.resource)}" target="aauth-board">See it on ${site}</a>`;
+
+  if (!approved) {
+    return html(
+      200,
+      `<section class="card"><h2>Declined</h2>
+        <p>${agent} won't ${p.kind === 'person' ? `act for you at ${site}` : `do this at ${site}`}. Nothing was shared or posted.</p>
+        <div class="actions">${back}</div></section>`,
+    );
+  }
+
+  if (p.kind === 'auth') {
+    return html(
+      200,
+      `<section class="card"><h2>Approved</h2>
+        <p>${agent} is posting your message to ${site} now.</p>
+        ${remember ? `<p class="muted">Future posts by ${agent} at ${site} won't ask you again. You can revoke that anytime under <a href="/account">Remembered permissions</a>.</p>` : ''}
+        <div class="actions">${back}${seeIt}</div></section>`,
+    );
+  }
+
+  // Identity confirmed. Wait here for the agent's permission request and open it
+  // in this tab, so the person doesn't have to go back and forth between tabs.
+  const poll = `/interact/next?resource=${encodeURIComponent(p.resource)}&agent=${encodeURIComponent(p.agent.jkt)}&since=${now() - 5}`;
   return html(
     200,
-    `<section class="card"><h2>${approved ? 'Done' : 'Cancelled'}</h2>
-      ${why}
-      <p>You can close this tab and return to <strong>${esc(p.agent.name)}</strong>. It will notice within a few seconds.</p></section>`,
+    `<section class="card"><h2>${site} knows it's you</h2>
+      ${auto ? `<p>You're already signed in as <strong>${esc(session.name)}</strong>, so there was nothing to confirm.</p>` : ''}
+      <p>Your Person Server told ${site} who you are, using a private ID that only ${site} sees (not your name). That doesn't let ${agent} do anything yet.</p>
+      <div id="next" data-poll="${esc(poll)}" data-callback="${esc(callback || '')}">
+        <p class="waiting">Next, ${agent} will ask your permission to post. Waiting for its request…</p>
+      </div>
+      <p class="muted">Not you? <a href="/reset">Start over</a></p>
+    </section>
+    <template id="auto-approved">
+      <p class="success">Approved automatically: you chose "Always allow" for ${agent} at ${site}. It's posting your message now.</p>
+      <div class="actions">${back}${seeIt}</div>
+    </template>
+    <template id="no-request">
+      <p>${agent} hasn't asked yet. Go back to it to continue.</p>
+      <div class="actions">${back}</div>
+    </template>
+    <script>
+      (() => {
+        const next = document.getElementById('next');
+        const show = (id) => next.replaceChildren(document.getElementById(id).content.cloneNode(true));
+        const started = Date.now();
+        async function check() {
+          try {
+            const step = await fetch(next.dataset.poll, { cache: 'no-store' }).then((r) => r.json());
+            if (step.code) {
+              const cb = next.dataset.callback;
+              location.href = '/interact?code=' + encodeURIComponent(step.code) + (cb ? '&callback=' + encodeURIComponent(cb) : '');
+              return;
+            }
+            if (step.auto) return show('auto-approved');
+          } catch {}
+          if (Date.now() - started < 45000) setTimeout(check, 1500);
+          else show('no-request');
+        }
+        check();
+      })();
+    </script>`,
   );
 }
 
@@ -226,11 +289,13 @@ async function decide(p, session, approve, { remember = false } = {}) {
   await consumeCode(p.code); // codes are single-use
 }
 
-/** After a decision, send the person back to the agent (or show a done page). */
+/**
+ * After a decision, show what happened. The PS doesn't redirect to the agent:
+ * the agent opened this in its own tab and is already watching for the result.
+ * The callback becomes a "Back to the agent" button instead.
+ */
 function finish(p, approved, callbackParam, headers = {}, pageOpts = {}) {
-  const callback = safeCallback(p, callbackParam);
-  if (callback) return redirect(callback, headers);
-  const res = donePage(p, approved, pageOpts);
+  const res = donePage(p, approved, { ...pageOpts, callback: safeCallback(p, callbackParam) });
   for (const [k, v] of Object.entries(headers)) res.headers.set(k, v);
   return res;
 }
@@ -264,6 +329,16 @@ export default async (req) => {
     if (req.method === 'GET') return accountPage(session);
   }
 
+  // Polled by the "knows it's you" page: has the agent asked for permission yet?
+  if (req.method === 'GET' && path === '/interact/next') {
+    const session = readSession(req);
+    const resource = url.searchParams.get('resource') || '';
+    const step = session
+      ? await nextStep(pairwiseSub(session.uid, resource), url.searchParams.get('agent') || '', Number(url.searchParams.get('since')) || 0)
+      : null;
+    return json(200, step || {}, { 'cache-control': 'no-store' });
+  }
+
   if (req.method === 'GET' && path === '/interact') {
     const code = url.searchParams.get('code');
     if (!code) return html(200, codeForm());
@@ -276,7 +351,7 @@ export default async (req) => {
     // Already signed in: identifying you to a resource needs no further click.
     if (p.kind === 'person') {
       await decide(p, session, true);
-      return finish(p, true, callback, {}, { autoSession: session });
+      return finish(p, true, callback, {}, { session, auto: true });
     }
     if (!p.viewed) await savePending({ ...p, viewed: true });
     return html(200, consent(p, session, safeCallback(p, callback)));
@@ -304,7 +379,7 @@ export default async (req) => {
     // For an identity request, signing in *is* the consent (the page said so).
     if (p.kind === 'person') {
       await decide(p, session, true);
-      return finish(p, true, callbackParam, { 'Set-Cookie': cookie });
+      return finish(p, true, callbackParam, { 'Set-Cookie': cookie }, { session });
     }
     return redirect(interactUrl(code, callbackParam), { 'Set-Cookie': cookie });
   }
@@ -320,11 +395,12 @@ export default async (req) => {
     if (p.kind === 'auth' && pairwiseSub(session.uid, p.resource) !== p.sub) {
       return html(403, consent(p, session, safeCallback(p, callbackParam)));
     }
-    await decide(p, session, true, { remember: form.get('remember') === '1' });
-    return finish(p, true, callbackParam);
+    const remember = form.get('remember') === '1';
+    await decide(p, session, true, { remember });
+    return finish(p, true, callbackParam, {}, { session, remember });
   }
 
   return new Response('Not found', { status: 404 });
 };
 
-export const config = { path: ['/interact', '/interact/login', '/interact/decision', '/account', '/account/revoke', '/reset', '/logout'] };
+export const config = { path: ['/interact', '/interact/next', '/interact/login', '/interact/decision', '/account', '/account/revoke', '/reset', '/logout'] };
