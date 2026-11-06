@@ -10,6 +10,8 @@ A small, readable, three-site demo of [AAuth](https://github.com/dickhardt/AAuth
 
 Each folder deploys as its own Netlify site, so the three roles run on three real origins.
 
+**Live demo:** start at the [agent](https://aauth-demo-agent.netlify.app), then watch the [message board](https://aauth-demo-board.netlify.app). Your [Person Server](https://aauth-demo-person-server.netlify.app) handles sign-in and approvals.
+
 Implements a subset of [`draft-hardt-oauth-aauth-protocol-11`](https://datatracker.ietf.org/doc/draft-hardt-oauth-aauth-protocol/) (Sept 2026) and [`draft-hardt-httpbis-signature-key-09`](https://datatracker.ietf.org/doc/draft-hardt-httpbis-signature-key/). It uses the three-party "PS authorization" mode.
 
 ## The flow
