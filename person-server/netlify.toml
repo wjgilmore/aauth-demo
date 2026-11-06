@@ -1,0 +1,17 @@
+# Deploy this folder as its own Netlify site (set "Base directory" to "person-server").
+[build]
+  base = "person-server"
+  publish = "public"
+  command = "echo No build step"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[dev]
+  framework = "#static"
+  publish = "public"
+  port = 8881
+  functionsPort = 9991
+  staticServerPort = 9981
+  autoLaunch = false

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Person Server</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-role="ps">
+  <header class="site">
+    <span class="badge">Person Server</span>
+    <h1>Your Person Server</h1>
+    <p>In AAuth, your Person Server (PS) is the party that speaks for <em>you</em>. Agents ask it before they act for you. Resources trust what it signs.</p>
+  </header>
+  <main>
+    <section class="card">
+      <h2>What this PS does in the demo</h2>
+      <ol>
+        <li><strong>Identifies you to a resource.</strong> When an agent needs to act for you at a resource, the PS has you sign in and issues a <em>person token</em> with a pseudonymous ID that's unique to that resource. This grants no permissions. If you're already signed in, it happens without a click.</li>
+        <li><strong>Asks for your consent.</strong> When the resource wants proof of permission, the agent brings a <em>resource token</em> here. The PS shows you exactly what's being requested and, if you allow it, issues an <em>auth token</em> bound to that agent's key. Tick "Always allow" and future requests for the same thing are approved without asking, until you revoke them.</li>
+      </ol>
+      <p>Sign-in is a display name only. This is a demo, not a real identity provider.</p>
+      <p><a class="button" id="agent-link" href="#">Open the demo agent →</a> <a class="button secondary" href="/interact">Enter a code</a> <a class="button secondary" href="/account">Remembered permissions</a></p>
+    </section>
+  </main>
+  <footer>AAuth demo · <a href="/.well-known/aauth-person.json">PS metadata</a> · <a href="/jwks.json">JWKS</a> · <a href="https://github.com/dickhardt/AAuth">About AAuth</a></footer>
+  <script>
+    fetch('/api/config').then((r) => r.json()).then((c) => (document.getElementById('agent-link').href = c.agentUrl));
+  </script>
+</body>
+</html>

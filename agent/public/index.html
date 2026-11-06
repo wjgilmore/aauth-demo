@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo Posting Agent</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-role="agent">
+  <header class="site">
+    <span class="badge">Agent</span>
+    <h1>Demo Posting Agent</h1>
+    <p>A third-party agent that posts to the message board for you, but only after your Person Server says yes. Every protocol message is shown below.</p>
+  </header>
+
+  <main class="split">
+    <div>
+      <section class="card">
+        <h2>Give the agent a task</h2>
+        <form id="task-form">
+          <label>Message to post on the <a id="board-link" href="#" target="_blank">board</a>
+            <textarea name="message" maxlength="280" rows="3" required placeholder="Hello from an agent, with my permission!"></textarea>
+          </label>
+          <details>
+            <summary>Use a different Person Server</summary>
+            <label>Person Server URL <input name="psUrl" type="url" placeholder="https://…"></label>
+            <p class="muted">Any AAuth Person Server works. The board trusts whichever PS the person uses.</p>
+          </details>
+          <button id="start">Post it for me</button>
+          <p class="error" id="form-error" role="alert"></p>
+          <p class="muted" id="memory" hidden>The agent remembers your person token, so it won't need to send you to your PS to identify you. <button type="button" class="link" id="forget">Forget me</button></p>
+        </form>
+      </section>
+
+      <section class="card" id="progress" hidden>
+        <h2>Progress</h2>
+        <ol class="steps" id="steps"></ol>
+        <div id="action"></div>
+      </section>
+    </div>
+
+    <section>
+      <div class="row"><h2>Protocol inspector</h2><span class="muted">JWTs are decoded inline</span></div>
+      <div id="log" class="log"><p class="muted">Start a task to see the AAuth messages.</p></div>
+    </section>
+  </main>
+
+  <footer>AAuth demo · <a href="/.well-known/aauth-agent.json">Agent metadata</a> · <a href="/jwks.json">JWKS</a> · <a href="https://github.com/dickhardt/AAuth">About AAuth</a></footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    let config = {};
+    let task = null;
+    let timer = null;
+
+    const STEPS = [
+      ['call-board', 'Agent introduces itself to the board'],
+      ['person-token', 'Your Person Server identifies you to the board', 'person'],
+      ['call-board-person', 'Board issues a resource token'],
+      ['auth-token', 'Your Person Server authorizes the post', 'auth'],
+      ['call-board-auth', 'Agent posts with the auth token'],
+    ];
+    const ORDER = ['call-board', 'discover-ps', 'person-token', 'call-board-person', 'auth-token', 'call-board-auth', 'done'];
+
+    function stepIndex(t) {
+      if (t.step === 'poll') return t.pending?.purpose === 'person' ? 2 : 4;
+      return ORDER.indexOf(t.step);
+    }
+
+    function el(tag, attrs = {}, ...children) {
+      const e = document.createElement(tag);
+      for (const [k, v] of Object.entries(attrs)) k === 'class' ? (e.className = v) : e.setAttribute(k, v);
+      for (const c of children) if (c != null) e.append(c);
+      return e;
+    }
+
+    function decodeJwt(t) {
+      try {
+        const [h, p] = t.split('.').map((s) => JSON.parse(atob(s.replace(/-/g, '+').replace(/_/g, '/'))));
+        return { header: h, payload: p };
+      } catch { return null; }
+    }
+
+    const JWT_RE = /eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g;
+    function jwtsIn(value) {
+      const found = new Set(JSON.stringify(value ?? '').match(JWT_RE) || []);
+      return [...found].map((t) => ({ token: t, ...decodeJwt(t) })).filter((j) => j.header);
+    }
+
+    function jwtBlock({ header, payload }) {
+      return el('div', { class: 'jwt' },
+        el('div', { class: 'jwt-typ' }, header.typ || 'JWT'),
+        el('pre', {}, JSON.stringify({ header, payload }, null, 2)));
+    }
+
+    function short(v) {
+      return JSON.stringify(v, null, 2).replace(JWT_RE, (t) => `${t.slice(0, 24)}…(${decodeJwt(t)?.header.typ || 'jwt'})`);
+    }
+
+    function renderLog(entries) {
+      const log = $('log');
+      log.replaceChildren();
+      entries.forEach((e, i) => {
+        const d = el('details', { class: 'entry' + (e.response && e.response.status >= 400 ? ' challenged' : '') });
+        if (i === entries.length - 1) d.open = true;
+        const status = e.response ? el('span', { class: 'status s' + String(e.response.status)[0] }, e.response.status) : null;
+        d.append(el('summary', {}, el('span', { class: 'n' }, i + 1), ' ', e.title, ' ', status));
+        if (e.explain) d.append(el('p', { class: 'explain' }, e.explain));
+        if (e.request) {
+          const r = e.request;
+          d.append(el('h4', {}, 'Request'), el('pre', {}, `${r.method} ${r.url}\n` +
+            Object.entries(r.headers || {}).map(([k, v]) => `${k}: ${v.replace(JWT_RE, (t) => t.slice(0, 24) + '…')}`).join('\n') +
+            (r.body ? `\n\n${short(r.body)}` : '')));
+        }
+        if (e.response) {
+          const r = e.response;
+          d.append(el('h4', {}, 'Response'), el('pre', {}, `HTTP ${r.status}\n` +
+            Object.entries(r.headers || {}).map(([k, v]) => `${k}: ${v.replace(JWT_RE, (t) => t.slice(0, 24) + '…')}`).join('\n') +
+            (r.body ? `\n\n${short(r.body)}` : '')));
+        }
+        const jwts = jwtsIn([e.tokens, e.request?.headers?.['signature-key'], e.request?.body, e.response?.headers, e.response?.body]);
+        if (jwts.length) d.append(el('h4', {}, 'Decoded tokens'), ...jwts.map(jwtBlock));
+        log.append(d);
+      });
+    }
+
+    function renderProgress(t) {
+      $('progress').hidden = false;
+      const idx = stepIndex(t);
+      const steps = $('steps');
+      steps.replaceChildren();
+      for (const [key, label, needsYou] of STEPS) {
+        const i = ORDER.indexOf(key);
+        let state = i < idx || t.status === 'done' ? 'done' : i === idx ? 'current' : 'todo';
+        if (t.status === 'failed' && state === 'current') state = 'failed';
+        steps.append(el('li', { class: state }, label, needsYou ? el('span', { class: 'you' }, 'may need you') : null));
+      }
+
+      const action = $('action');
+      action.replaceChildren();
+      if (t.status === 'waiting' && t.pending) {
+        action.append(
+          el('p', {}, t.pending.purpose === 'person'
+            ? 'Your Person Server needs to know it\'s you. If you\'re already signed in there, you\'ll bounce straight back.'
+            : 'Your Person Server needs your approval for this post.'),
+          el('p', { class: 'code' }, 'Code ', el('strong', {}, t.pending.code)),
+          el('a', { class: 'button', href: t.pending.url }, 'Open your Person Server →'),
+          el('p', { class: 'muted' }, t.pendingStatus === 'interacting' ? 'You have the request open at your PS…' : 'Waiting for you…'));
+      } else if (t.status === 'done') {
+        action.append(el('p', { class: 'success' }, 'Posted! '), el('a', { class: 'button', href: config.boardUrl, target: '_blank' }, 'See it on the board →'));
+        refreshMemory();
+      } else if (t.status === 'failed') {
+        action.append(el('p', { class: 'error' }, t.error));
+      }
+    }
+
+    function render(t) {
+      task = t;
+      renderProgress(t);
+      renderLog(t.log);
+      $('start').disabled = ['running', 'waiting'].includes(t.status);
+      clearTimeout(timer);
+      if (t.status === 'waiting') timer = setTimeout(() => advance(t.id), 2500);
+    }
+
+    async function refreshMemory() {
+      const s = await fetch('/api/session').then((r) => r.json()).catch(() => ({}));
+      $('memory').hidden = !s.remembered;
+    }
+
+    $('forget').addEventListener('click', async () => {
+      await fetch('/api/session', { method: 'DELETE' });
+      refreshMemory();
+    });
+
+    async function advance(id) {
+      const res = await fetch(`/api/tasks/${id}/advance`, { method: 'POST' });
+      if (res.ok) render(await res.json());
+    }
+
+    $('task-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      $('start').disabled = true;
+      const res = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ message: form.get('message'), psUrl: form.get('psUrl') || undefined }),
+      });
+      const body = await res.json();
+      if (!res.ok) { $('form-error').textContent = body.detail || 'Could not start the task'; $('start').disabled = false; return; }
+      $('form-error').textContent = '';
+      history.replaceState(null, '', `/?task=${body.id}`);
+      render(body);
+    });
+
+    (async () => {
+      config = await fetch('/api/config').then((r) => r.json());
+      $('board-link').href = config.boardUrl;
+      document.querySelector('[name=psUrl]').placeholder = config.psUrl;
+      refreshMemory();
+      const id = new URLSearchParams(location.search).get('task');
+      if (id) {
+        if (location.pathname === '/callback') history.replaceState(null, '', `/?task=${id}`);
+        await advance(id);
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "aauth-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A three-site demo of the AAuth protocol: a Person Server, an agent, and a message board.",
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "person-server",
+    "agent",
+    "board"
+  ],
+  "scripts": {
+    "keys": "node scripts/gen-keys.mjs",
+    "dev": "npm run sync-css && node scripts/dev.mjs",
+    "test": "node --test shared/*.test.mjs",
+    "sync-css": "for s in person-server agent board; do cp shared/style.css $s/public/style.css; done"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
