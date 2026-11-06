@@ -114,6 +114,13 @@ function fail(task, message) {
   task.log.push({ title: 'Failed', explain: message });
 }
 
+/** Explain why the board turned the agent away, using the board's own message when it gives one. */
+function boardRefused(task, res) {
+  const detail = res.body?.detail;
+  if (res.status === 429) return fail(task, `The board is rate limiting posts. ${detail || 'Try again later.'}`);
+  fail(task, detail ? `The board refused the post (${res.status}): ${detail}` : `Unexpected board response ${res.status}`);
+}
+
 function waitForPerson(task, res, purpose) {
   const r = res.requirement;
   if (res.status !== 202 || r.requirement !== 'interaction') return fail(task, `Expected 202 interaction from the PS, got ${res.status}`);
@@ -140,7 +147,7 @@ async function step(task) {
         token: task.tokens.agent,
       });
       if (res.status === 401 && res.requirement.requirement === 'person-token') task.step = 'discover-ps';
-      else fail(task, `Unexpected board response ${res.status}`);
+      else boardRefused(task, res);
       return;
     }
 
@@ -204,7 +211,7 @@ async function step(task) {
         token: task.tokens.person,
       });
       const rt = res.requirement['resource-token'];
-      if (task.reusedPersonToken && res.requirement.requirement !== 'auth-token') {
+      if (task.reusedPersonToken && res.status === 401 && res.requirement.requirement !== 'auth-token') {
         // The saved token was refused (expired, revoked, keys rotated): start over.
         await forgetSession(task.sid);
         task.reusedPersonToken = false;
@@ -213,7 +220,7 @@ async function step(task) {
         task.step = 'person-token';
         return;
       }
-      if (res.status !== 401 || res.requirement.requirement !== 'auth-token' || !rt) return fail(task, `Unexpected board response ${res.status}`);
+      if (res.status !== 401 || res.requirement.requirement !== 'auth-token' || !rt) return boardRefused(task, res);
 
       // Check the resource token before forwarding it to our PS.
       const { payload } = await verifyJwt(rt, { typ: 'aa-resource+jwt', dwk: 'aauth-resource.json' });
@@ -256,7 +263,7 @@ async function step(task) {
         task.status = 'done';
         task.post = res.body.post;
         task.step = 'done';
-      } else fail(task, `Board rejected the post (${res.status}): ${res.body?.detail || ''}`);
+      } else boardRefused(task, res);
       return;
     }
 

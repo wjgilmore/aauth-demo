@@ -11,23 +11,74 @@
 import { getStore } from '@netlify/blobs';
 import {
   AAuthError,
+  b64url,
   envJwk,
   envUrl,
   errorResponse,
   json,
   now,
+  problem,
   randomId,
   requirementHeader,
+  sha256,
   signJwt,
   verifySignedRequest,
 } from '../../../shared/aauth.mjs';
 import { checkMessage, cleanName } from '../../../shared/content.mjs';
+import { peek, take } from '../../../shared/ratelimit.mjs';
 
 const MAX_POSTS = 100;
 const MAX_AGE_SECONDS = 24 * 60 * 60;
 export const SCOPE = 'board.write profile';
 
 const store = () => getStore({ name: 'posts', consistency: 'strong' });
+
+// ---------------------------------------------------------------------------
+// Rate limits. Agents call the board from their own servers, so IP addresses
+// say little about who is posting. Instead the board limits what it can verify:
+//   * each person (their PS + pairwise sub)
+//   * each Person Server other than the demo's own, since anyone can run a PS
+//     and mint unlimited "people"
+//   * the board as a whole, as a final backstop
+// Defaults can be overridden with the environment variables below.
+// ---------------------------------------------------------------------------
+
+const limitsStore = () => getStore({ name: 'ratelimit', consistency: 'strong' });
+const envInt = (name, fallback) => {
+  const v = Number(process.env[name]);
+  return Number.isInteger(v) && v > 0 ? v : fallback;
+};
+
+function buckets({ iss, sub } = {}) {
+  const list = [];
+  if (iss && sub) {
+    list.push({
+      key: `person/${b64url(sha256(`${iss}|${sub}`))}`,
+      who: 'you',
+      limits: [
+        { max: envInt('BOARD_RATE_PERSON_PER_MINUTE', 3), window: 60 },
+        { max: envInt('BOARD_RATE_PERSON_PER_HOUR', 15), window: 3600 },
+      ],
+    });
+  }
+  if (iss && iss !== process.env.PS_URL) {
+    list.push({
+      key: `ps/${b64url(sha256(iss))}`,
+      who: `people using ${new URL(iss).host}`,
+      limits: [{ max: envInt('BOARD_RATE_PS_PER_HOUR', 30), window: 3600 }],
+    });
+  }
+  list.push({ key: 'global', who: 'everyone combined', limits: [{ max: envInt('BOARD_RATE_GLOBAL_PER_HOUR', 120), window: 3600 }] });
+  return list;
+}
+
+const humanize = (s) => (s < 90 ? `${s} seconds` : `${Math.ceil(s / 60)} minutes`);
+
+function rateLimited(result) {
+  return problem(429, 'rate_limited', `Too many posts from ${result.bucket.who}. Try again in ${humanize(result.retryAfter)}.`, {
+    'Retry-After': String(result.retryAfter),
+  });
+}
 
 async function listPosts() {
   const posts = (await store().get('all', { type: 'json' })) || [];
@@ -57,6 +108,13 @@ export default async (req) => {
     }
     const checked = checkMessage(raw);
     if (!checked.ok) throw new AAuthError(400, 'invalid_message', checked.error);
+
+    // Refuse early (without recording) if this post would be over a limit, so
+    // nobody is asked to approve a post the board will turn away.
+    if (typ !== 'aa-auth+jwt') {
+      const check = await peek(limitsStore(), buckets(typ === 'aa-person+jwt' ? payload : {}));
+      if (!check.ok) return rateLimited(check);
+    }
 
     // 1. Agent token only: we need to know which person the agent acts for.
     if (typ === 'aa-agent+jwt') {
@@ -99,6 +157,10 @@ export default async (req) => {
     // 3. Auth token: check scope and create the post.
     const scopes = String(payload.scope || '').split(' ');
     if (!scopes.includes('board.write')) throw new AAuthError(403, 'insufficient_scope', 'board.write is required');
+
+    // Count the post against every limit; refuse if any is full.
+    const taken = await take(limitsStore(), buckets(payload));
+    if (!taken.ok) return rateLimited(taken);
 
     const post = {
       id: randomId(8),

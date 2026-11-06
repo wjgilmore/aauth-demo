@@ -107,6 +107,22 @@ check(task.status === 'waiting' && task.pending?.purpose === 'auth', 'post still
 await decide(ada, task.pending.code, 'deny');
 
 // ---------------------------------------------------------------------------
+section('Rate limiting (3 posts per person per minute by default)');
+const browser3 = agentBrowser();
+task = await browser3.start('rate limit check 1');
+const { cookie: grace } = await signIn('Grace', task.pending.code);
+task = await browser3.advance(task.id);
+await decide(grace, task.pending.code, 'approve', { remember: '1' });
+task = await browser3.advance(task.id);
+task = task.status === 'done' ? await browser3.start('rate limit check 2') : task;
+task = task.status === 'done' ? await browser3.start('rate limit check 3') : task;
+check(task.status === 'done', 'three posts in a minute are accepted');
+task = await browser3.start('rate limit check 4');
+check(task.status === 'failed' && /rate limiting/i.test(task.error), 'the fourth is refused (429)');
+const limited = task.log.find((e) => e.response?.status === 429);
+check(Boolean(limited?.response.headers['retry-after']) && !titles(task).includes('Approved by your standing permission'), 'refused with Retry-After, before the PS is asked');
+
+// ---------------------------------------------------------------------------
 section('Content rules');
 for (const [m, label] of [
   ['look at https://example.com/pic.jpg', 'links are refused'],

@@ -138,7 +138,7 @@ scripts/                   key generation, local dev runner, e2e check
 - **Identity approval happens on a GET** when you're already signed in. That's convenient for a demo; a production PS would want a click or a stronger link to the agent's request.
 - **The board accepts any PS.** This is intentional: AAuth resources trust the issuer of the token, not a fixed list.
 - **No replay cache.** It relies on the 60-second signature window, which the spec makes optional.
-- **Abuse limits are basic.** Posts are capped at 280 characters, the board keeps only the newest 100, and posts expire after 24 hours. There's no rate limiting.
+- **Board storage is small.** Posts are capped at 280 characters, the board keeps only the newest 100, and posts expire after 24 hours.
 
 ## Content rules
 
@@ -153,7 +153,24 @@ The board accepts plain text only. It enforces this itself (`shared/content.mjs`
 
 The agent checks messages before it starts, so nobody approves a post that will be refused. The board checks again on every request, and re-applies the rules when it lists posts, so tightening a rule also hides older posts.
 
-A word list can't catch everything: misspellings, other languages, or text spelled out as "example dot com". The rules make abuse inconvenient, not impossible. For a widely promoted deployment, consider adding rate limiting or moderation.
+A word list can't catch everything: misspellings, other languages, or text spelled out as "example dot com". The rules make abuse inconvenient, not impossible. If the demo gets wide exposure, consider adding moderation.
+
+## Rate limits
+
+Agents call the board from their own servers, so an IP address says little about who is actually posting. The board limits what it can verify instead:
+
+| Limit | Default | Environment variable (board site) |
+|---|---|---|
+| Per person (their PS + pairwise `sub`) | 3 per minute | `BOARD_RATE_PERSON_PER_MINUTE` |
+| Per person | 15 per hour | `BOARD_RATE_PERSON_PER_HOUR` |
+| Per Person Server, other than the demo's own | 30 per hour | `BOARD_RATE_PS_PER_HOUR` |
+| Whole board | 120 per hour | `BOARD_RATE_GLOBAL_PER_HOUR` |
+
+The per-PS limit exists because anyone can run their own Person Server and mint unlimited "people". The board-wide limit is the final backstop.
+
+The board checks the limits on every request, before anyone is asked to approve anything. It counts a post only once it's accepted. Over a limit, it answers `429 Too Many Requests` with a `Retry-After` header, and the agent tells you how long to wait.
+
+The counters are sliding windows stored in Netlify Blobs (`shared/ratelimit.mjs`). They use conditional writes, so simultaneous posts can't both take the last slot. The local `netlify dev` sandbox doesn't support conditional writes, so locally the limits still apply but aren't race-proof.
 - **`netlify dev` quirk:** when a function returns 403 or 404, `netlify dev` re-invokes it with `.html` or `/index.html` appended. `cleanPath()` in `shared/aauth.mjs` undoes that, but only under `NETLIFY_DEV`.
 
 AAuth is a moving draft that is migrating to the OpenID Foundation, so field names may change between versions.
