@@ -210,12 +210,14 @@ export function page(body) {
   <link rel="stylesheet" href="/style.css">
 </head>
 <body data-role="ps">
+  <nav id="demo-nav" class="demo-nav" aria-label="Demo sites"></nav>
   <header class="site">
     <span class="badge">Person Server</span>
     <h1><a href="/">Your Person Server</a></h1>
   </header>
   <main>${body}</main>
   <footer>AAuth demo · Person Server · <a href="/.well-known/aauth-person.json">Metadata</a></footer>
+  <script src="/nav.js"></script>
 </body>
 </html>`;
 }

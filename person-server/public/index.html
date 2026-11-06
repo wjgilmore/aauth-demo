@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body data-role="ps">
+  <nav id="demo-nav" class="demo-nav" aria-label="Demo sites"></nav>
   <header class="site">
     <span class="badge">Person Server</span>
     <h1>Your Person Server</h1>
@@ -20,12 +21,10 @@
         <li><strong>Asks for your consent.</strong> When the resource wants proof of permission, the agent brings a <em>resource token</em> here. The PS shows you exactly what's being requested and, if you allow it, issues an <em>auth token</em> bound to that agent's key. Tick "Always allow" and future requests for the same thing are approved without asking, until you revoke them.</li>
       </ol>
       <p>Sign-in is a display name only. This is a demo, not a real identity provider.</p>
-      <p><a class="button" id="agent-link" href="#">Open the demo agent →</a> <a class="button secondary" href="/interact">Enter a code</a> <a class="button secondary" href="/account">Remembered permissions</a></p>
+      <p><a class="button" data-site="agent" href="#">Open the demo agent →</a> <a class="button secondary" href="/interact">Enter a code</a> <a class="button secondary" href="/account">Remembered permissions</a></p>
     </section>
   </main>
   <footer>AAuth demo · <a href="/.well-known/aauth-person.json">PS metadata</a> · <a href="/jwks.json">JWKS</a> · <a href="https://github.com/dickhardt/AAuth">About AAuth</a></footer>
-  <script>
-    fetch('/api/config').then((r) => r.json()).then((c) => (document.getElementById('agent-link').href = c.agentUrl));
-  </script>
+  <script src="/nav.js"></script>
 </body>
 </html>

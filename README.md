@@ -122,7 +122,7 @@ Once the sites are connected to your GitHub repo (Site configuration → Build &
 
 ```
 shared/aauth.mjs           JWTs, RFC 9421 signing/verification, discovery. Node built-ins only.
-shared/style.css           Styles; `npm run sync-css` copies them into each site's public/
+shared/style.css, nav.js   Styles and the demo nav bar; `npm run sync-assets` copies them into each site's public/
 person-server/netlify/     metadata, person_token + auth_token endpoints, polling, consent UI
 agent/netlify/lib/agent.mjs  the agent's AAuth state machine (read this first)
 board/netlify/functions/   resource metadata and the protected /api/posts

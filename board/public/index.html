@@ -8,6 +8,7 @@
   <link rel="aauth-resource" href="/.well-known/aauth-resource.json">
 </head>
 <body data-role="board">
+  <nav id="demo-nav" class="demo-nav" aria-label="Demo sites"></nav>
   <header class="site">
     <span class="badge">Resource</span>
     <h1>Message Board</h1>
@@ -23,7 +24,7 @@
         <li>The auth token is signed by the person's PS and bound to that agent key.</li>
         <li>The token grants <code>board.write</code> for this board only.</li>
       </ol>
-      <p><a class="button" id="agent-link" href="#">Try it with the demo agent →</a></p>
+      <p><a class="button" data-site="agent" href="#">Try it with the demo agent →</a></p>
     </section>
 
     <section>
@@ -34,9 +35,8 @@
 
   <footer>Posts are cleared after 24 hours. <a href="/.well-known/aauth-resource.json">Resource metadata</a> · <a href="https://github.com/dickhardt/AAuth">About AAuth</a></footer>
 
+  <script src="/nav.js"></script>
   <script>
-    fetch('/api/config').then((r) => r.json()).then((c) => (document.getElementById('agent-link').href = c.agentUrl));
-
     const list = document.getElementById('posts');
     const status = document.getElementById('status');
 

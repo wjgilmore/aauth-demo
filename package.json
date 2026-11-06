@@ -12,9 +12,9 @@
   ],
   "scripts": {
     "keys": "node scripts/gen-keys.mjs",
-    "dev": "npm run sync-css && node scripts/dev.mjs",
+    "dev": "npm run sync-assets && node scripts/dev.mjs",
     "test": "node --test shared/*.test.mjs",
-    "sync-css": "for s in person-server agent board; do cp shared/style.css $s/public/style.css; done"
+    "sync-assets": "for s in person-server agent board; do cp shared/style.css shared/nav.js $s/public/; done"
   },
   "engines": {
     "node": ">=20"

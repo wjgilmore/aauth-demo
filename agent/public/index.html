@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body data-role="agent">
+  <nav id="demo-nav" class="demo-nav" aria-label="Demo sites"></nav>
   <header class="site">
     <span class="badge">Agent</span>
     <h1>Demo Posting Agent</h1>
@@ -18,7 +19,7 @@
       <section class="card">
         <h2>Give the agent a task</h2>
         <form id="task-form">
-          <label>Message to post on the <a id="board-link" href="#" target="_blank">board</a>
+          <label>Message to post on the <a data-site="board" href="#">board</a>
             <textarea name="message" maxlength="280" rows="3" required placeholder="Hello from an agent, with my permission!"></textarea>
           </label>
           <details>
@@ -47,6 +48,7 @@
 
   <footer>AAuth demo · <a href="/.well-known/aauth-agent.json">Agent metadata</a> · <a href="/jwks.json">JWKS</a> · <a href="https://github.com/dickhardt/AAuth">About AAuth</a></footer>
 
+  <script src="/nav.js"></script>
   <script>
     const $ = (id) => document.getElementById(id);
     let config = {};
@@ -153,12 +155,12 @@
             ? 'Your Person Server needs to know it\'s you. If you\'re already signed in there, you\'ll bounce straight back.'
             : 'Your Person Server needs your approval for this post.'),
           el('p', { class: 'code' }, 'Code ', el('strong', {}, t.pending.code)),
-          el('a', { class: 'button', href: newTabUrl(t.pending.url), target: '_blank', rel: 'noopener' }, 'Open your Person Server →'),
+          el('a', { class: 'button', href: newTabUrl(t.pending.url), target: demoTarget('ps') }, 'Open your Person Server →'),
           el('p', { class: 'muted' }, t.pendingStatus === 'interacting'
             ? 'You have the request open at your PS. This page updates on its own once you decide.'
             : 'Opens in a new tab. This page updates on its own once you decide.'));
       } else if (t.status === 'done') {
-        action.append(el('p', { class: 'success' }, 'Posted! '), el('a', { class: 'button', href: config.boardUrl, target: '_blank' }, 'See it on the board →'));
+        action.append(el('p', { class: 'success' }, 'Posted! '), el('a', { class: 'button', href: config.boardUrl, target: demoTarget('board') }, 'See it on the board →'));
         refreshMemory();
       } else if (t.status === 'failed') {
         action.append(el('p', { class: 'error' }, t.error));
@@ -206,8 +208,7 @@
     });
 
     (async () => {
-      config = await fetch('/api/config').then((r) => r.json());
-      $('board-link').href = config.boardUrl;
+      config = await window.demoConfig;
       document.querySelector('[name=psUrl]').placeholder = config.psUrl;
       refreshMemory();
       const id = new URLSearchParams(location.search).get('task');
