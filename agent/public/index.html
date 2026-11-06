@@ -124,6 +124,15 @@
       });
     }
 
+    // The PS opens in a new tab, so drop the callback: otherwise that tab would
+    // redirect back here and become a second copy of this page. Without it, the PS
+    // shows a "you can close this tab" page and this tab notices by polling.
+    function newTabUrl(url) {
+      const u = new URL(url);
+      u.searchParams.delete('callback');
+      return u.href;
+    }
+
     function renderProgress(t) {
       $('progress').hidden = false;
       const idx = stepIndex(t);
@@ -144,8 +153,10 @@
             ? 'Your Person Server needs to know it\'s you. If you\'re already signed in there, you\'ll bounce straight back.'
             : 'Your Person Server needs your approval for this post.'),
           el('p', { class: 'code' }, 'Code ', el('strong', {}, t.pending.code)),
-          el('a', { class: 'button', href: t.pending.url }, 'Open your Person Server →'),
-          el('p', { class: 'muted' }, t.pendingStatus === 'interacting' ? 'You have the request open at your PS…' : 'Waiting for you…'));
+          el('a', { class: 'button', href: newTabUrl(t.pending.url), target: '_blank', rel: 'noopener' }, 'Open your Person Server →'),
+          el('p', { class: 'muted' }, t.pendingStatus === 'interacting'
+            ? 'You have the request open at your PS. This page updates on its own once you decide.'
+            : 'Opens in a new tab. This page updates on its own once you decide.'));
       } else if (t.status === 'done') {
         action.append(el('p', { class: 'success' }, 'Posted! '), el('a', { class: 'button', href: config.boardUrl, target: '_blank' }, 'See it on the board →'));
         refreshMemory();
