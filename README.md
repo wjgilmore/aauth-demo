@@ -106,6 +106,8 @@ node scripts/e2e.mjs      # plays the person over HTTP and checks the whole flow
    node scripts/e2e.mjs --ps https://YOUR-PS.netlify.app --agent https://YOUR-AGENT.netlify.app --board https://YOUR-BOARD.netlify.app
    ```
 
+Once the sites are connected to your GitHub repo (Site configuration → Build & deploy → Link repository, with the same base directories), every push to `main` redeploys all three.
+
 `deploy/` and `.env` files contain private keys and are git-ignored. Storage uses [Netlify Blobs](https://docs.netlify.com/blobs/overview/), so no database setup is needed.
 
 ## Layout
